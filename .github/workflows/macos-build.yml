@@ -31,7 +31,9 @@ jobs:
         run: flutter create --platforms=macos --no-pub .
 
       - name: Prepare real Namida music-only source
-        run: python3 tool/prepare_macos_music_port.py
+        run: |
+          python3 tool/prepare_macos_music_port.py
+          python3 tool/remove_macos_unused_dependencies.py
 
       - name: Configure macOS permissions and app name
         run: |
@@ -69,11 +71,14 @@ jobs:
       - name: Resolve public dependencies
         run: flutter pub get
 
-      - name: Verify private YouTube packages are gone
+      - name: Verify private packages are gone
         run: |
           ! grep -q "github.com/namidaco/youtipie" pubspec.yaml
           ! grep -q "github.com/namidaco/namico_login_manager" pubspec.yaml
           ! grep -q "github.com/namidaco/namico_subscription_manager" pubspec.yaml
+          ! grep -q "github.com/namidaco/basic_audio_handler" pubspec.yaml
+          ! grep -q "github.com/namidaco/playlist_manager" pubspec.yaml
+          ! grep -q "github.com/MSOB7YY/flutter_sharing_intent" pubspec.yaml
 
       - name: Build macOS release
         run: flutter build macos --release
