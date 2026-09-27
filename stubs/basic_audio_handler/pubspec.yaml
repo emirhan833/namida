@@ -1,0 +1,9 @@
+name: basic_audio_handler
+description: macOS music-only compatibility API for Namida
+version: 0.0.1
+publish_to: none
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  audio_service: any
+  just_audio: any
