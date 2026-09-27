@@ -12,17 +12,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Audit private audio handler coupling
+      - name: Audit private local-library packages
         shell: bash
         run: |
-          echo '=== files importing basic_audio_handler ==='
-          grep -RIl "package:basic_audio_handler" lib --include='*.dart' || true
+          for pkg in playlist_manager history_manager namico_db_wrapper; do
+            echo "=== files importing $pkg ==="
+            grep -RIl "package:$pkg" lib --include='*.dart' || true
+            echo
+            echo "=== import/export lines for $pkg ==="
+            grep -RH "package:$pkg" lib --include='*.dart' || true
+            echo
+          done
+
+          echo '=== playlist_manager identifiers ==='
+          find lib -name '*.dart' -print0 | xargs -0 grep -hoE '\b(PlaylistManager|PlaylistItemWithDate|PlaylistID|Playlist|PlaylistSearch|PlaylistCategory|SortTypePlaylist)[A-Za-z0-9_]*\b' | sort -u || true
           echo
-          echo '=== import lines ==='
-          grep -RH "package:basic_audio_handler" lib --include='*.dart' || true
+          echo '=== history_manager identifiers ==='
+          find lib -name '*.dart' -print0 | xargs -0 grep -hoE '\b(HistoryManager|HistoryRecord|HistoryEntry|ItemWithDate|TrackSource)[A-Za-z0-9_]*\b' | sort -u || true
           echo
-          echo '=== likely basic_audio_handler identifiers used by Namida ==='
-          find lib -name '*.dart' -print0 | xargs -0 grep -hoE '\b(BasicAudioHandler|PlayerConfig|PlayerRepeatMode|InterruptionType|InterruptionAction|SleepTimerConfig|AudioTrack|VideoInfoData|AndroidEqualizerExtended|AndroidLoudnessEnhancerExtended|AudioPipeline|AudioVideoSource|AVPlayer|QueueManager|QueueSourceBase)[A-Za-z0-9_]*\b' | sort -u || true
+          echo '=== namico_db_wrapper identifiers ==='
+          find lib -name '*.dart' -print0 | xargs -0 grep -hoE '\b(NamicoDB|DBWrapper|DatabaseWrapper|DBConfig|DBManager|NamicoDb)[A-Za-z0-9_]*\b' | sort -u || true
           echo
-          echo '=== handler member calls from player_controller ==='
-          grep -oE '_audioHandler\.[A-Za-z0-9_]+' lib/controller/player_controller.dart | sort -u || true
+          echo '=== PlaylistController inheritance and key manager members ==='
+          grep -nE 'class PlaylistController|PlaylistManager<|super\.|playlist[A-Za-zA-Z0-9_]*\.' lib/controller/playlist_controller.dart | head -n 250 || true
+          echo
+          echo '=== HistoryController inheritance and key manager members ==='
+          grep -nE 'class HistoryController|HistoryManager<|super\.|history[A-Za-zA-Z0-9_]*\.' lib/controller/history_controller.dart | head -n 250 || true
