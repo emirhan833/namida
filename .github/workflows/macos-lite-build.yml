@@ -29,7 +29,7 @@ jobs:
       - name: Add macOS runner
         run: flutter create --platforms=macos --no-pub .
 
-      - name: Configure macOS file access
+      - name: Configure macOS file access and source compatibility
         run: |
           python3 - <<'PY'
           import plistlib
@@ -57,16 +57,26 @@ jobs:
           if not changed:
               lines.append('PRODUCT_NAME = Namida macOS Lite')
           appinfo.write_text('\n'.join(lines) + '\n')
+
+          main = Path('lib/main.dart')
+          source = main.read_text()
+          source = source.replace('FilePicker.platform.pickFiles(', 'FilePicker.pickFiles(')
+          main.write_text(source)
+
+          generated_test = Path('test/widget_test.dart')
+          if generated_test.exists():
+              generated_test.unlink()
           PY
 
       - name: Resolve dependencies
         run: flutter pub get
 
       - name: Verify source
-        run: grep -q "NamidaMacOSLiteApp" lib/main.dart
+        run: |
+          grep -q "NamidaMacOSLiteApp" lib/main.dart
+          grep -q "FilePicker.pickFiles" lib/main.dart
 
       - name: Analyze
-        continue-on-error: true
         run: flutter analyze
 
       - name: Build macOS release
