@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Prepare the real Namida source tree for the macOS music-only build.
 
-This script intentionally edits only the CI checkout. The repository keeps the
-upstream source layout, while the build replaces YouTube/private-package imports
-outside lib/youtube with a small compatibility layer. Unreferenced lib/youtube
-files are then not part of the Flutter kernel build.
+The macOS branch keeps Namida's real UI/indexer/playlist/player-controller code.
+Private YouTube services are disconnected and the private basic_audio_handler
+package is replaced by the local compatibility package in stubs/.
 """
 
 from pathlib import Path
@@ -26,7 +25,6 @@ def remove_dependency_block(text: str, key: str) -> str:
             while i < len(lines):
                 line = lines[i]
                 stripped = line.strip()
-                # A new dependency key is exactly two-space indented.
                 if line.startswith("  ") and not line.startswith("    ") and stripped and not stripped.startswith("#"):
                     break
                 i += 1
@@ -38,12 +36,27 @@ def remove_dependency_block(text: str, key: str) -> str:
 
 def patch_pubspec() -> None:
     text = PUBSPEC.read_text()
-    for dep in ("youtipie", "namico_login_manager", "namico_subscription_manager"):
+    for dep in (
+        "youtipie",
+        "namico_login_manager",
+        "namico_subscription_manager",
+        "basic_audio_handler",
+    ):
         text = remove_dependency_block(text, dep)
 
-    # Keep the known working flutter_file_picker revision used by the first
-    # macOS experiments; upstream HEAD has API/native changes incompatible with
-    # this Namida snapshot.
+    # Reintroduce the audio API as a local package. The actual sound engine is
+    # lib/base/audio_handler.dart and uses just_audio directly.
+    deps_marker = "dependencies:\n"
+    local_audio = (
+        "dependencies:\n"
+        "  basic_audio_handler:\n"
+        "    path: stubs/basic_audio_handler\n"
+    )
+    if deps_marker not in text:
+        raise SystemExit("dependencies block not found")
+    text = text.replace(deps_marker, local_audio, 1)
+
+    # Known compatible file_picker revision for this Namida snapshot.
     old = (
         "  file_picker:\n"
         "    git:\n"
@@ -70,7 +83,6 @@ def rewrite_imports() -> None:
         text = path.read_text()
         original = text
         for prefix in prefixes:
-            # Replace only the URI, preserving aliases and show/hide clauses.
             text = re.sub(
                 rf"(?<=['\"])({re.escape(prefix)}[^'\"]+)(?=['\"])",
                 STUB_URI,
@@ -99,39 +111,21 @@ def patch_macos_feature_flags() -> None:
     if "static final _isMacOS" not in text and old in text:
         text = text.replace(old, new, 1)
 
-    text = text.replace(
-        "static final showDownloadNotifications = _isWindows || _isLinux;",
-        "static final showDownloadNotifications = _isWindows || _isLinux || _isMacOS;",
-    )
-    text = text.replace(
-        "static final showVideoControlsOnHover = _isWindows || _isLinux;",
-        "static final showVideoControlsOnHover = _isWindows || _isLinux || _isMacOS;",
-    )
-    text = text.replace(
-        "static final tiltingCardsEffect = _isWindows || _isLinux;",
-        "static final tiltingCardsEffect = _isWindows || _isLinux || _isMacOS;",
-    )
-    text = text.replace(
-        "static final smoothScrolling = _isWindows || _isLinux;",
-        "static final smoothScrolling = _isWindows || _isLinux || _isMacOS;",
-    )
-    text = text.replace(
-        "static final isStoragePermissionNotRequired = _isWindows || _isLinux;",
-        "static final isStoragePermissionNotRequired = _isWindows || _isLinux || _isMacOS;",
-    )
-    text = text.replace(
-        "static final recieveDragAndDrop = _isWindows || _isLinux;",
-        "static final recieveDragAndDrop = _isWindows || _isLinux || _isMacOS;",
-    )
+    for source, target in (
+        ("static final showDownloadNotifications = _isWindows || _isLinux;", "static final showDownloadNotifications = _isWindows || _isLinux || _isMacOS;"),
+        ("static final showVideoControlsOnHover = _isWindows || _isLinux;", "static final showVideoControlsOnHover = _isWindows || _isLinux || _isMacOS;"),
+        ("static final tiltingCardsEffect = _isWindows || _isLinux;", "static final tiltingCardsEffect = _isWindows || _isLinux || _isMacOS;"),
+        ("static final smoothScrolling = _isWindows || _isLinux;", "static final smoothScrolling = _isWindows || _isLinux || _isMacOS;"),
+        ("static final isStoragePermissionNotRequired = _isWindows || _isLinux;", "static final isStoragePermissionNotRequired = _isWindows || _isLinux || _isMacOS;"),
+        ("static final recieveDragAndDrop = _isWindows || _isLinux;", "static final recieveDragAndDrop = _isWindows || _isLinux || _isMacOS;"),
+    ):
+        text = text.replace(source, target)
     path.write_text(text)
 
 
 def patch_platform_base() -> None:
     path = ROOT / "lib/controller/platform/base.dart"
     text = path.read_text()
-
-    # macOS release prefers bundled executables next to the app binary, then the
-    # generic helpers already fall back to `which ffmpeg/ffprobe` where enabled.
     linux_dir = """      linux: () {
         final appDir = Platform.environment['APPDIR'];
         if (appDir != null && appDir.isNotEmpty) {
@@ -164,18 +158,11 @@ def patch_platform_base() -> None:
       linux: () => name,
 """
     if old_exe in text:
-        text = text.replace(
-            old_exe,
-            old_exe + "      macos: () => name,\n",
-            1,
-        )
-
+        text = text.replace(old_exe, old_exe + "      macos: () => name,\n", 1)
     path.write_text(text)
 
 
 def patch_main_music_only_link_handling() -> None:
-    # Prevent the desktop app from trying to interpret dropped text/URLs as
-    # YouTube or Patreon. Local files/directories and M3U input remain intact.
     path = ROOT / "lib/main.dart"
     text = path.read_text()
     text = text.replace(
