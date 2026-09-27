@@ -12,21 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Audit shared YouTube coupling
+      - name: Audit private audio handler coupling
         shell: bash
         run: |
-          echo '=== settings.youtube members used outside lib/youtube ==='
-          find lib -name '*.dart' -not -path 'lib/youtube/*' -print0 \
-            | xargs -0 grep -hoE 'settings\.youtube\.[A-Za-z0-9_]+' \
-            | sort -u || true
+          echo '=== files importing basic_audio_handler ==='
+          grep -RIl "package:basic_audio_handler" lib --include='*.dart' || true
           echo
-          echo '=== package:youtipie imports outside lib/youtube ==='
-          grep -RIl "package:youtipie" lib --include='*.dart' | grep -v '^lib/youtube/' || true
+          echo '=== import lines ==='
+          grep -RH "package:basic_audio_handler" lib --include='*.dart' || true
           echo
-          echo '=== imports of lib/youtube from outside lib/youtube ==='
-          grep -RIl "package:namida/youtube/" lib --include='*.dart' | grep -v '^lib/youtube/' || true
+          echo '=== likely basic_audio_handler identifiers used by Namida ==='
+          find lib -name '*.dart' -print0 | xargs -0 grep -hoE '\b(BasicAudioHandler|PlayerConfig|PlayerRepeatMode|InterruptionType|InterruptionAction|SleepTimerConfig|AudioTrack|VideoInfoData|AndroidEqualizerExtended|AndroidLoudnessEnhancerExtended|AudioPipeline|AudioVideoSource|AVPlayer|QueueManager|QueueSourceBase)[A-Za-z0-9_]*\b' | sort -u || true
           echo
-          echo '=== YouTube-ish identifiers used outside lib/youtube ==='
-          find lib -name '*.dart' -not -path 'lib/youtube/*' -print0 \
-            | xargs -0 grep -hoE '\b(Youtube|YouTube|YT|YTHosted|VideoLike|Membership|Youti|ExecuteDetails|AudioStream|VideoStream)[A-Za-z0-9_]*\b' \
-            | sort -u || true
+          echo '=== handler member calls from player_controller ==='
+          grep -oE '_audioHandler\.[A-Za-z0-9_]+' lib/controller/player_controller.dart | sort -u || true
