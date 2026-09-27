@@ -2,8 +2,8 @@
 """Prepare the real Namida source tree for the macOS music-only build.
 
 The macOS branch keeps Namida's real UI/indexer/playlist/player-controller code.
-Private YouTube services are disconnected and the private basic_audio_handler
-package is replaced by the local compatibility package in stubs/.
+Private YouTube services are disconnected. Private audio/playlist packages are
+replaced by local compatibility implementations under stubs/.
 """
 
 from pathlib import Path
@@ -41,22 +41,22 @@ def patch_pubspec() -> None:
         "namico_login_manager",
         "namico_subscription_manager",
         "basic_audio_handler",
+        "playlist_manager",
     ):
         text = remove_dependency_block(text, dep)
 
-    # Reintroduce the audio API as a local package. The actual sound engine is
-    # lib/base/audio_handler.dart and uses just_audio directly.
     deps_marker = "dependencies:\n"
-    local_audio = (
+    local_packages = (
         "dependencies:\n"
         "  basic_audio_handler:\n"
         "    path: stubs/basic_audio_handler\n"
+        "  playlist_manager:\n"
+        "    path: stubs/playlist_manager\n"
     )
     if deps_marker not in text:
         raise SystemExit("dependencies block not found")
-    text = text.replace(deps_marker, local_audio, 1)
+    text = text.replace(deps_marker, local_packages, 1)
 
-    # Known compatible file_picker revision for this Namida snapshot.
     old = (
         "  file_picker:\n"
         "    git:\n"
@@ -90,6 +90,41 @@ def rewrite_imports() -> None:
             )
         if text != original:
             path.write_text(text)
+
+
+def patch_playlist_manager_compat() -> None:
+    """Fix the generated local package API to match this Namida snapshot."""
+    path = ROOT / "stubs/playlist_manager/lib/playlist_manager.dart"
+    text = path.read_text()
+    old = """  Future<GeneralPlaylist<T, S>> addNewPlaylistRaw({
+    required String name,
+  }) async => throw UnimplementedError();
+
+  Future<GeneralPlaylist<T, S>> addNewPlaylistRawCompat(
+    String name, {
+    List<E> tracks = const [],
+    required T Function(E item, int dateAdded, PlaylistID playlistID) convertItem,
+    int? creationDate,
+    String comment = '',
+    List<String> moods = const [],
+    String? m3uPath,
+    required FutureOr<PlaylistAddDuplicateAction> Function() actionIfAlreadyExists,
+  }) async {
+"""
+    new = """  Future<GeneralPlaylist<T, S>> addNewPlaylistRaw(
+    String name, {
+    List<E> tracks = const [],
+    required T Function(E item, int dateAdded, PlaylistID playlistID) convertItem,
+    int? creationDate,
+    String comment = '',
+    List<String> moods = const [],
+    String? m3uPath,
+    required FutureOr<PlaylistAddDuplicateAction> Function() actionIfAlreadyExists,
+  }) async {
+"""
+    if old in text:
+        text = text.replace(old, new, 1)
+    path.write_text(text)
 
 
 def patch_music_only_defaults() -> None:
@@ -175,6 +210,7 @@ def patch_main_music_only_link_handling() -> None:
 def main() -> None:
     patch_pubspec()
     rewrite_imports()
+    patch_playlist_manager_compat()
     patch_music_only_defaults()
     patch_macos_feature_flags()
     patch_platform_base()
