@@ -22,11 +22,21 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
       - name: Add macOS runner
         run: flutter create --platforms=macos --no-pub .
+
+      - name: Pin file_picker revision
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('pubspec.yaml')
+          s = p.read_text()
+          old = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n"
+          new = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n      ref: 8dc97859f42ca7ca2d6d347dd7960a3c7b657baf\n"
+          if old not in s:
+              raise SystemExit('file_picker block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
 
       - name: Resolve dependencies
         run: flutter pub get
@@ -38,7 +48,9 @@ jobs:
         if: success()
         run: |
           cd build/macos/Build/Products/Release
-          ditto -c -k --sequesterRsrc --keepParent namida.app Namida-macOS.zip
+          APP=$(find . -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Namida-macOS.zip
 
       - name: Upload macOS build
         if: success()
