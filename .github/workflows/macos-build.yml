@@ -1,19 +1,21 @@
-name: Build Namida for macOS
+name: Build Namida Music for macOS
 
 on:
   push:
     branches:
-      - macos-port
+      - macos-music-port
   workflow_dispatch:
 
 jobs:
-  build-macos:
+  build-macos-music:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout Namida
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -22,165 +24,70 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Add macOS runner
+      - name: Add native macOS runner
         run: flutter create --platforms=macos --no-pub .
 
-      - name: Prepare macOS compatibility dependencies
+      - name: Prepare real Namida music-only source
+        run: python3 tool/prepare_macos_music_port.py
+
+      - name: Configure macOS permissions and app name
         run: |
-          mkdir -p stubs/namico_login_manager/lib
-          mkdir -p stubs/namico_subscription_manager/lib/core
-          mkdir -p stubs/namico_subscription_manager/lib/class
-
-          cat > stubs/namico_login_manager/pubspec.yaml <<'EOF'
-          name: namico_login_manager
-          description: macOS compatibility stub for Namida CI
-          version: 0.0.1
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-          dependencies:
-            flutter:
-              sdk: flutter
-          EOF
-
-          cat > stubs/namico_login_manager/lib/namico_login_manager.dart <<'EOF'
-          import 'package:flutter/widgets.dart';
-
-          enum SignInDecision {
-            forceSignIn,
-            signInIfNeeded,
-            skipSignIn,
-          }
-
-          class LoginPageConfiguration {
-            final Widget? header;
-            final dynamic popPage;
-            final dynamic pushPage;
-
-            const LoginPageConfiguration({
-              this.header,
-              this.popPage,
-              this.pushPage,
-            });
-          }
-          EOF
-
-          cat > stubs/namico_subscription_manager/pubspec.yaml <<'EOF'
-          name: namico_subscription_manager
-          description: macOS compatibility stub for Namida CI
-          version: 0.0.1
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-          EOF
-
-          cat > stubs/namico_subscription_manager/lib/core/enum.dart <<'EOF'
-          enum MembershipType {
-            none,
-            unknown,
-            cutie,
-            pookie,
-            patootie,
-            owner,
-          }
-          EOF
-
-          cat > stubs/namico_subscription_manager/lib/class/supabase_sub.dart <<'EOF'
-          import '../core/enum.dart';
-
-          class SupabaseSub {
-            final String? uuid;
-            final String? email;
-            final String? name;
-            final DateTime? availableTill;
-
-            const SupabaseSub({
-              this.uuid,
-              this.email,
-              this.name,
-              this.availableTill,
-            });
-
-            MembershipType toMembershipType() => MembershipType.none;
-          }
-          EOF
-
-          cat > stubs/namico_subscription_manager/lib/class/support_tier.dart <<'EOF'
-          import '../core/enum.dart';
-
-          class SupportTier {
-            final String? userName;
-            final String? imageUrl;
-            final num? ammountUSD;
-
-            const SupportTier({
-              this.userName,
-              this.imageUrl,
-              this.ammountUSD,
-            });
-
-            MembershipType toMembershipType() => MembershipType.none;
-          }
-          EOF
-
-          cat > stubs/namico_subscription_manager/lib/namico_subscription_manager.dart <<'EOF'
-          class _NoopService {
-            const _NoopService();
-
-            @override
-            dynamic noSuchMethod(Invocation invocation) => null;
-          }
-
-          class NamicoSubscriptionManager {
-            static dynamic onError;
-            static dynamic patreon = const _NoopService();
-            static dynamic supabase = const _NoopService();
-            static dynamic cacheManager = const _NoopService();
-
-            static void initialize({dynamic dataDirectory}) {}
-          }
-          EOF
-
           python3 - <<'PY'
+          import plistlib
           from pathlib import Path
-          p = Path('pubspec.yaml')
-          s = p.read_text()
 
-          old = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n"
-          new = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n      ref: 8dc97859f42ca7ca2d6d347dd7960a3c7b657baf\n"
-          if old in s and '8dc97859f42ca7ca2d6d347dd7960a3c7b657baf' not in s:
-              s = s.replace(old, new, 1)
+          for filename in [
+              'macos/Runner/Release.entitlements',
+              'macos/Runner/DebugProfile.entitlements',
+          ]:
+              p = Path(filename)
+              data = plistlib.loads(p.read_bytes())
+              # This is a direct desktop port, not an App Store build. Namida
+              # needs to index user-selected music folders and artwork files.
+              data['com.apple.security.app-sandbox'] = False
+              data['com.apple.security.files.user-selected.read-only'] = True
+              p.write_bytes(plistlib.dumps(data))
 
-          marker = "dependency_overrides:\n"
-          overrides = (
-              "dependency_overrides:\n"
-              "  namico_login_manager:\n"
-              "    path: stubs/namico_login_manager\n"
-              "  namico_subscription_manager:\n"
-              "    path: stubs/namico_subscription_manager\n"
-          )
-          if marker not in s:
-              raise SystemExit('dependency_overrides block not found')
-          s = s.replace(marker, overrides, 1)
-          p.write_text(s)
+          appinfo = Path('macos/Runner/Configs/AppInfo.xcconfig')
+          text = appinfo.read_text()
+          lines = []
+          found_name = False
+          for line in text.splitlines():
+              if line.startswith('PRODUCT_NAME ='):
+                  lines.append('PRODUCT_NAME = Namida')
+                  found_name = True
+              elif line.startswith('PRODUCT_BUNDLE_IDENTIFIER ='):
+                  lines.append('PRODUCT_BUNDLE_IDENTIFIER = com.msob7y.namida.macosmusic')
+              else:
+                  lines.append(line)
+          if not found_name:
+              lines.append('PRODUCT_NAME = Namida')
+          appinfo.write_text('\n'.join(lines) + '\n')
           PY
 
-      - name: Resolve dependencies
+      - name: Resolve public dependencies
         run: flutter pub get
+
+      - name: Verify private YouTube packages are gone
+        run: |
+          ! grep -q "github.com/namidaco/youtipie" pubspec.yaml
+          ! grep -q "github.com/namidaco/namico_login_manager" pubspec.yaml
+          ! grep -q "github.com/namidaco/namico_subscription_manager" pubspec.yaml
 
       - name: Build macOS release
         run: flutter build macos --release
 
       - name: Package app
-        if: success()
         run: |
           cd build/macos/Build/Products/Release
           APP=$(find . -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" Namida-macOS.zip
+          echo "Packaging real Namida port: $APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Namida-macOS-Music-Port.zip
 
       - name: Upload macOS build
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Namida-macOS
-          path: build/macos/Build/Products/Release/Namida-macOS.zip
+          name: Namida-macOS-Music-Port
+          path: build/macos/Build/Products/Release/Namida-macOS-Music-Port.zip
           if-no-files-found: error
