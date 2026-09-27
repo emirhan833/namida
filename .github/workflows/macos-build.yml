@@ -15,7 +15,10 @@ jobs:
       - name: Checkout Namida
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      - name: Checkout public translations only
+        run: git submodule update --init --depth=1 external/language
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -42,8 +45,6 @@ jobs:
           ]:
               p = Path(filename)
               data = plistlib.loads(p.read_bytes())
-              # This is a direct desktop port, not an App Store build. Namida
-              # needs to index user-selected music folders and artwork files.
               data['com.apple.security.app-sandbox'] = False
               data['com.apple.security.files.user-selected.read-only'] = True
               p.write_bytes(plistlib.dumps(data))
