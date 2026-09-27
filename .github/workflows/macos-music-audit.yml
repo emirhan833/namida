@@ -12,20 +12,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Audit playlist manager API surface
+      - name: Audit Git dependency accessibility
         shell: bash
         run: |
-          echo '=== PlaylistController.inst member uses outside controller ==='
-          grep -RhoE 'PlaylistController\.inst\.[A-Za-z0-9_]+' lib --include='*.dart' | sort -u || true
+          python3 - <<'PY' > /tmp/giturls.txt
+          from pathlib import Path
+          for line in Path('pubspec.yaml').read_text().splitlines():
+              s = line.strip()
+              if s.startswith('url: https://github.com/'):
+                  print(s.split('url:',1)[1].strip())
+          PY
+
+          echo '=== Git URLs ==='
+          cat /tmp/giturls.txt
           echo
-          echo '=== PlaylistController inherited bare member calls inside controller ==='
-          grep -oE '\b(playlistsMap|favouritePlaylist|favouritePlaylistRx|getPlaylist|removePlaylists|removePlaylist|updatePropertyInPlaylist|replaceTheseTracksInPlaylists|replaceTheseTracksInPlaylistsBulk|toggleTrackFavourite|prepareAllPlaylistsFile|prepareDefaultPlaylistsFileAsync|addTracksToPlaylistRaw|addNewPlaylistRaw|setArtworkForPlaylist|getArtworkFileForPlaylist|renamePlaylist)\b' lib/controller/playlist_controller.dart | sort -u || true
-          echo
-          echo '=== playlist object fields commonly used ==='
-          grep -RhoE '\bplaylist\.(name|tracks|modifiedDate|creationDate|comment|moods|m3uPath|sorts|reverse|isFavourite|playlistID|id|artwork)[A-Za-z0-9_]*' lib --include='*.dart' | sort -u || true
-          echo
-          echo '=== PlaylistAddDuplicateAction cases ==='
-          grep -RhoE 'PlaylistAddDuplicateAction\.[A-Za-z0-9_]+' lib --include='*.dart' | sort -u || true
-          echo
-          echo '=== FavouritePlaylist references ==='
-          grep -RHnE 'FavouritePlaylist|favouritePlaylist' lib --include='*.dart' | head -n 250 || true
+          echo '=== inaccessible Git dependencies ==='
+          while IFS= read -r url; do
+            if ! timeout 12s git ls-remote "$url" HEAD >/dev/null 2>&1; then
+              echo "$url"
+            fi
+          done < /tmp/giturls.txt
