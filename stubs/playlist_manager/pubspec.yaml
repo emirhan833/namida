@@ -1,0 +1,10 @@
+name: playlist_manager
+description: Local playlist manager compatibility layer for Namida macOS music port
+version: 1.2.0
+publish_to: none
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  nampack:
+    git:
+      url: https://github.com/MSOB7YY/nampack
