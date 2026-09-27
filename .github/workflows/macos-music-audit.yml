@@ -12,29 +12,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: List non-YouTube files coupled to YouTube/private packages
+      - name: Audit shared YouTube coupling
         shell: bash
         run: |
+          echo '=== settings.youtube members used outside lib/youtube ==='
+          find lib -name '*.dart' -not -path 'lib/youtube/*' -print0 \
+            | xargs -0 grep -hoE 'settings\.youtube\.[A-Za-z0-9_]+' \
+            | sort -u || true
+          echo
           echo '=== package:youtipie imports outside lib/youtube ==='
           grep -RIl "package:youtipie" lib --include='*.dart' | grep -v '^lib/youtube/' || true
-          echo
-          echo '=== namico imports outside lib/youtube ==='
-          grep -RIlE "package:namico_(login|subscription)_manager" lib --include='*.dart' | grep -v '^lib/youtube/' || true
           echo
           echo '=== imports of lib/youtube from outside lib/youtube ==='
           grep -RIl "package:namida/youtube/" lib --include='*.dart' | grep -v '^lib/youtube/' || true
           echo
           echo '=== YouTube-ish identifiers used outside lib/youtube ==='
           find lib -name '*.dart' -not -path 'lib/youtube/*' -print0 \
-            | xargs -0 grep -hoE '\b(Youtube|YouTube|YT|YTHosted|VideoLike|Membership|Youti|ExecuteDetails)[A-Za-z0-9_]*\b' \
+            | xargs -0 grep -hoE '\b(Youtube|YouTube|YT|YTHosted|VideoLike|Membership|Youti|ExecuteDetails|AudioStream|VideoStream)[A-Za-z0-9_]*\b' \
             | sort -u || true
-          echo
-          echo '=== imports from youtipie/namida-youtube with show/hide clauses ==='
-          grep -RhE "^import 'package:(youtipie|namida/youtube)/" lib --include='*.dart' \
-            | grep -v '^lib/youtube/' | sort -u || true
-          echo
-          echo '=== all NamidaPlatformBuilder.init call sites ==='
-          grep -RIl "NamidaPlatformBuilder.init" lib/controller lib/core --include='*.dart' || true
-          echo
-          echo '=== pubspec private namidaco deps ==='
-          grep -n -A3 -B1 "github.com/namidaco/" pubspec.yaml || true
