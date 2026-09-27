@@ -1,0 +1,88 @@
+name: Build Namida macOS Lite
+
+on:
+  push:
+    branches:
+      - macos-lite
+  workflow_dispatch:
+
+jobs:
+  build-macos-lite:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: macos_lite
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: stable
+          cache: true
+
+      - name: Add macOS runner
+        run: flutter create --platforms=macos --no-pub .
+
+      - name: Configure macOS file access
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          for filename in [
+              'macos/Runner/Release.entitlements',
+              'macos/Runner/DebugProfile.entitlements',
+          ]:
+              p = Path(filename)
+              data = plistlib.loads(p.read_bytes())
+              data['com.apple.security.files.user-selected.read-only'] = True
+              p.write_bytes(plistlib.dumps(data))
+
+          appinfo = Path('macos/Runner/Configs/AppInfo.xcconfig')
+          text = appinfo.read_text()
+          lines = []
+          changed = False
+          for line in text.splitlines():
+              if line.startswith('PRODUCT_NAME ='):
+                  lines.append('PRODUCT_NAME = Namida macOS Lite')
+                  changed = True
+              else:
+                  lines.append(line)
+          if not changed:
+              lines.append('PRODUCT_NAME = Namida macOS Lite')
+          appinfo.write_text('\n'.join(lines) + '\n')
+          PY
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Verify source
+        run: grep -q "NamidaMacOSLiteApp" lib/main.dart
+
+      - name: Analyze
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: Build macOS release
+        run: flutter build macos --release
+
+      - name: Package app
+        run: |
+          cd build/macos/Build/Products/Release
+          APP=$(find . -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP"
+          echo "Packaging $APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" Namida-macOS-Lite-v0.1.zip
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Namida-macOS-Lite-v0.1
+          path: macos_lite/build/macos/Build/Products/Release/Namida-macOS-Lite-v0.1.zip
+          if-no-files-found: error
