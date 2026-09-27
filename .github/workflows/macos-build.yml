@@ -25,17 +25,142 @@ jobs:
       - name: Add macOS runner
         run: flutter create --platforms=macos --no-pub .
 
-      - name: Pin file_picker revision
+      - name: Prepare macOS compatibility dependencies
         run: |
+          mkdir -p stubs/namico_login_manager/lib
+          mkdir -p stubs/namico_subscription_manager/lib/core
+          mkdir -p stubs/namico_subscription_manager/lib/class
+
+          cat > stubs/namico_login_manager/pubspec.yaml <<'EOF'
+          name: namico_login_manager
+          description: macOS compatibility stub for Namida CI
+          version: 0.0.1
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+          dependencies:
+            flutter:
+              sdk: flutter
+          EOF
+
+          cat > stubs/namico_login_manager/lib/namico_login_manager.dart <<'EOF'
+          import 'package:flutter/widgets.dart';
+
+          enum SignInDecision {
+            forceSignIn,
+            signInIfNeeded,
+            skipSignIn,
+          }
+
+          class LoginPageConfiguration {
+            final Widget? header;
+            final dynamic popPage;
+            final dynamic pushPage;
+
+            const LoginPageConfiguration({
+              this.header,
+              this.popPage,
+              this.pushPage,
+            });
+          }
+          EOF
+
+          cat > stubs/namico_subscription_manager/pubspec.yaml <<'EOF'
+          name: namico_subscription_manager
+          description: macOS compatibility stub for Namida CI
+          version: 0.0.1
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+          EOF
+
+          cat > stubs/namico_subscription_manager/lib/core/enum.dart <<'EOF'
+          enum MembershipType {
+            none,
+            unknown,
+            cutie,
+            pookie,
+            patootie,
+            owner,
+          }
+          EOF
+
+          cat > stubs/namico_subscription_manager/lib/class/supabase_sub.dart <<'EOF'
+          import '../core/enum.dart';
+
+          class SupabaseSub {
+            final String? uuid;
+            final String? email;
+            final String? name;
+            final DateTime? availableTill;
+
+            const SupabaseSub({
+              this.uuid,
+              this.email,
+              this.name,
+              this.availableTill,
+            });
+
+            MembershipType toMembershipType() => MembershipType.none;
+          }
+          EOF
+
+          cat > stubs/namico_subscription_manager/lib/class/support_tier.dart <<'EOF'
+          import '../core/enum.dart';
+
+          class SupportTier {
+            final String? userName;
+            final String? imageUrl;
+            final num? ammountUSD;
+
+            const SupportTier({
+              this.userName,
+              this.imageUrl,
+              this.ammountUSD,
+            });
+
+            MembershipType toMembershipType() => MembershipType.none;
+          }
+          EOF
+
+          cat > stubs/namico_subscription_manager/lib/namico_subscription_manager.dart <<'EOF'
+          class _NoopService {
+            const _NoopService();
+
+            @override
+            dynamic noSuchMethod(Invocation invocation) => null;
+          }
+
+          class NamicoSubscriptionManager {
+            static dynamic onError;
+            static dynamic patreon = const _NoopService();
+            static dynamic supabase = const _NoopService();
+            static dynamic cacheManager = const _NoopService();
+
+            static void initialize({dynamic dataDirectory}) {}
+          }
+          EOF
+
           python3 - <<'PY'
           from pathlib import Path
           p = Path('pubspec.yaml')
           s = p.read_text()
+
           old = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n"
           new = "  file_picker:\n    git:\n      url: https://github.com/miguelpruivo/flutter_file_picker\n      ref: 8dc97859f42ca7ca2d6d347dd7960a3c7b657baf\n"
-          if old not in s:
-              raise SystemExit('file_picker block not found')
-          p.write_text(s.replace(old, new, 1))
+          if old in s and '8dc97859f42ca7ca2d6d347dd7960a3c7b657baf' not in s:
+              s = s.replace(old, new, 1)
+
+          marker = "dependency_overrides:\n"
+          overrides = (
+              "dependency_overrides:\n"
+              "  namico_login_manager:\n"
+              "    path: stubs/namico_login_manager\n"
+              "  namico_subscription_manager:\n"
+              "    path: stubs/namico_subscription_manager\n"
+          )
+          if marker not in s:
+              raise SystemExit('dependency_overrides block not found')
+          s = s.replace(marker, overrides, 1)
+          p.write_text(s)
           PY
 
       - name: Resolve dependencies
